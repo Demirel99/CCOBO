@@ -5,6 +5,7 @@ Iterative Crowd Counting Model Training Script
 import os
 import torch
 import torch.optim as optim
+from torch.optim.lr_scheduler import CosineAnnealingLR # Added for Cosine Annealing
 from torch.cuda.amp import GradScaler, autocast # Added for AMP
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ import random
 # Import from local modules
 from config import (
     DEVICE, SEED, TOTAL_ITERATIONS, BATCH_SIZE, LEARNING_RATE, WEIGHT_DECAY,
-    VALIDATION_INTERVAL, VALIDATION_BATCHES, SCHEDULER_PATIENCE,
+    VALIDATION_INTERVAL, VALIDATION_BATCHES, # SCHEDULER_PATIENCE, # Removed SCHEDULER_PATIENCE
     IMAGE_DIR_TRAIN_VAL, GT_DIR_TRAIN_VAL, OUTPUT_DIR, LOG_FILE_PATH, BEST_MODEL_PATH,
     AUGMENTATION_SIZE, MODEL_INPUT_SIZE, GT_PSF_SIGMA
 )
@@ -46,8 +47,13 @@ def train():
     # --- Model, Optimizer, Scheduler ---
     model = VGG19FPNASPP().to(DEVICE)
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1,
-                                                   patience=SCHEDULER_PATIENCE, verbose=True)
+    
+    # OLD Scheduler:
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1,
+    #                                                patience=SCHEDULER_PATIENCE, verbose=True)
+    # NEW Scheduler: CosineAnnealingLR
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=TOTAL_ITERATIONS, eta_min=1e-6)
+
 
     # Initialize GradScaler for AMP, enabled only if using CUDA
     use_amp = DEVICE.type == 'cuda'
@@ -112,6 +118,9 @@ def train():
         # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         scaler.step(optimizer)
         scaler.update()
+        
+        # Step the scheduler after each optimizer update for CosineAnnealingLR
+        scheduler.step()
 
         train_loss_accum += loss.item() * img_batch.size(0)
         samples_in_accum += img_batch.size(0)
@@ -174,13 +183,14 @@ def train():
             log_message = (f"Iter [{iteration}/{TOTAL_ITERATIONS}] | "
                            f"Train Loss: {avg_train_loss:.4f} | "
                            f"Val Loss: {average_val_loss:.4f} | "
-                           f"LR: {optimizer.param_groups[0]['lr']:.4e}")
+                           f"LR: {optimizer.param_groups[0]['lr']:.4e}") # This will now show the cosine annealed LR
             print(f"\n{log_message}") # Print to console (with newline)
 
             with open(LOG_FILE_PATH, "a") as log_file:
                 log_file.write(log_message + "\n")
 
-            scheduler.step(average_val_loss)
+            # ReduceLROnPlateau scheduler step was here, no longer needed for CosineAnnealingLR
+            # scheduler.step(average_val_loss) 
 
             if average_val_loss < best_val_loss:
                 best_val_loss = average_val_loss

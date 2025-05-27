@@ -7,12 +7,12 @@ import torch
 
 # --- Dataset Paths ---
 # Adjust these paths based on your environment
-BASE_DATA_DIR = "C:\\Users\\Mehmet_Postdoc\\Desktop\\datasets_for_experiments\\ShanghaiTech_Crowd_Counting_Dataset" # Base directory after unzipping
-IMAGE_DIR_TRAIN_VAL = os.path.join(BASE_DATA_DIR, "part_A_final\\train_data\\images")
-GT_DIR_TRAIN_VAL = os.path.join(BASE_DATA_DIR, "part_A_final\\train_data\\ground_truth")
-IMAGE_DIR_TEST = os.path.join(BASE_DATA_DIR, "part_A_final\\test_data\\images")
-GT_DIR_TEST = os.path.join(BASE_DATA_DIR, "part_A_final\\test_data\\ground_truth")
-OUTPUT_DIR = "C:\\Users\\Mehmet_Postdoc\\Desktop\\python_set_up_code\\iterative_crowd_counting\\crowd_counting_outputs" # For logs, plots, models
+BASE_DATA_DIR = "/content/drive/MyDrive/ShanghaiTech" # Base directory after unzipping
+IMAGE_DIR_TRAIN_VAL = os.path.join(BASE_DATA_DIR, "part_A_final/train_data/images")
+GT_DIR_TRAIN_VAL = os.path.join(BASE_DATA_DIR, "part_A_final/train_data/ground_truth")
+IMAGE_DIR_TEST = os.path.join(BASE_DATA_DIR, "part_A_final/test_data/images")
+GT_DIR_TEST = os.path.join(BASE_DATA_DIR, "part_A_final/test_data/ground_truth")
+OUTPUT_DIR = "/content/drive/MyDrive/CCOBO_Output_Dir" # For logs, plots, models
 
 # --- Data Preprocessing ---
 AUGMENTATION_SIZE = 256 # Intermediate size during augmentation before final crop (e.g., 256 for 224 input)
@@ -22,7 +22,7 @@ GT_PSF_SIGMA = 3      # Sigma for Gaussian kernel to generate GT PSFs
 
 # --- Training ---
 TOTAL_ITERATIONS = 20000
-BATCH_SIZE = 8 # You might need to reduce batch size if 224x224 images cause memory issues
+BATCH_SIZE = 64 # You might need to reduce batch size if 224x224 images cause memory issues
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 VALIDATION_INTERVAL = 100 # How often to run validation

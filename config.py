@@ -13,8 +13,6 @@ GT_DIR_TRAIN_VAL = os.path.join(BASE_DATA_DIR, "part_A_final\\train_data\\ground
 IMAGE_DIR_TEST = os.path.join(BASE_DATA_DIR, "part_A_final\\test_data\\images")
 GT_DIR_TEST = os.path.join(BASE_DATA_DIR, "part_A_final\\test_data\\ground_truth")
 OUTPUT_DIR = "C:\\Users\\Mehmet_Postdoc\\Desktop\\python_set_up_code\\iterative_crowd_counting\\crowd_counting_outputs" # For logs, plots, models
-EMPTY_PATCHES_OUTPUT_DIR = "C:\\Users\\Mehmet_Postdoc\\Desktop\\python_set_up_code\\iterative_crowd_counting\\dataset_for_stopping_criteria\\no_people" # Or your desired path
-ANNOTATED_PATCHES_OUTPUT_DIR = "C:\\Users\\Mehmet_Postdoc\\Desktop\\python_set_up_code\\iterative_crowd_counting\\dataset_for_stopping_criteria\\end_iteration"
 
 # --- Data Preprocessing ---
 AUGMENTATION_SIZE = 256 # Intermediate size during augmentation before final crop (e.g., 256 for 224 input)

@@ -5,6 +5,7 @@ Iterative Crowd Counting Model Training Script
 import os
 import torch
 import torch.optim as optim
+from torch.cuda.amp import GradScaler, autocast # Added for AMP
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
@@ -47,6 +48,12 @@ def train():
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1,
                                                    patience=SCHEDULER_PATIENCE, verbose=True)
+
+    # Initialize GradScaler for AMP, enabled only if using CUDA
+    use_amp = DEVICE.type == 'cuda'
+    scaler = GradScaler(enabled=use_amp)
+    if use_amp:
+        print("Using Automatic Mixed Precision (AMP).")
 
     # --- Logging and Tracking ---
     best_val_loss = float('inf')
@@ -91,13 +98,20 @@ def train():
         in_psf_batch = in_psf_batch.to(DEVICE)
         tgt_psf_batch = tgt_psf_batch.to(DEVICE)
 
-        predicted_psf = model(img_batch, in_psf_batch)
-        loss = kl_divergence_loss(predicted_psf, tgt_psf_batch)
-
         optimizer.zero_grad()
-        loss.backward()
-        # Optional: torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
+
+        # Forward pass with autocast
+        with autocast(enabled=use_amp):
+            predicted_psf = model(img_batch, in_psf_batch)
+            loss = kl_divergence_loss(predicted_psf, tgt_psf_batch)
+
+        # Scale loss, backward pass, and optimizer step
+        scaler.scale(loss).backward()
+        # Optional: If using gradient clipping, unscale gradients before clipping
+        # scaler.unscale_(optimizer)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        scaler.step(optimizer)
+        scaler.update()
 
         train_loss_accum += loss.item() * img_batch.size(0)
         samples_in_accum += img_batch.size(0)
@@ -135,8 +149,11 @@ def train():
                     val_in_psf = val_in_psf.to(DEVICE)
                     val_tgt_psf = val_tgt_psf.to(DEVICE)
 
-                    val_pred_psf = model(val_img, val_in_psf)
-                    batch_loss = kl_divergence_loss(val_pred_psf, val_tgt_psf)
+                    # Forward pass with autocast for validation (no scaling needed for gradients)
+                    with autocast(enabled=use_amp):
+                        val_pred_psf = model(val_img, val_in_psf)
+                        batch_loss = kl_divergence_loss(val_pred_psf, val_tgt_psf)
+                    
                     total_val_loss += batch_loss.item() * val_img.size(0)
                     total_val_samples += val_img.size(0)
 
@@ -144,7 +161,7 @@ def train():
             random.setstate(rng_state['random'])
             np.random.set_state(rng_state['numpy'])
             torch.set_rng_state(rng_state['torch'])
-            if rng_state['cuda']: torch.cuda.set_rng_state_all(rng_state['cuda'])
+            if rng_state['cuda'] and torch.cuda.is_available(): torch.cuda.set_rng_state_all(rng_state['cuda'])
             set_seed(SEED + iteration + VALIDATION_BATCHES + 1) # Reseed for next training iterations
 
             average_val_loss = total_val_loss / total_val_samples if total_val_samples > 0 else float('inf')

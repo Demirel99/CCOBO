@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torchvision import models
 
 # Import from config
-from config import PSF_HEAD_TEMP, MODEL_INPUT_SIZE
+from config import PSF_HEAD_TEMP, MODEL_INPUT_SIZE # MODEL_INPUT_SIZE is imported but not directly used for layer definitions
 
 class ASPP(nn.Module):
     """Atrous Spatial Pyramid Pooling (ASPP) module."""
@@ -64,6 +64,8 @@ class VGG19Encoder(nn.Module):
         features = list(vgg19.features)
         # Indices corresponding to VGG stages output (after ReLU/MaxPool)
         # VGG19: C1(64)@idx3, C2(128)@idx8, C3(256)@idx17, C4(512)@idx26, C5(512)@idx35
+        # Spatial sizes for 224x224 input:
+        # C1: 224x224, C2: 112x112, C3: 56x56, C4: 28x28, C5: 14x14 (before 5th pool)
         self.feature_layers = nn.ModuleList(features)
         self.capture_indices = {3, 8, 17, 26, 35}
 
@@ -85,14 +87,19 @@ class SmallPSFEncoder(nn.Module):
     """Encodes the 1-channel input PSF mask."""
     def __init__(self):
         super(SmallPSFEncoder, self).__init__()
+        # For input 224x224:
+        # 224->112 (pool1)
+        # 112->56  (pool2)
+        # 56->28   (pool3)
+        # 28->14   (pool4)
         self.encoder = nn.Sequential(
-            nn.Conv2d(1, 8, kernel_size=3, padding=1), nn.ReLU(inplace=True), nn.MaxPool2d(2, 2),       # 128->64
-            nn.Conv2d(8, 16, kernel_size=3, padding=1), nn.ReLU(inplace=True), nn.MaxPool2d(2, 2),      # 64->32
-            nn.Conv2d(16, 32, kernel_size=3, padding=1), nn.ReLU(inplace=True), nn.MaxPool2d(2, 2),     # 32->16
-            nn.Conv2d(32, 32, kernel_size=3, padding=1), nn.ReLU(inplace=True), nn.MaxPool2d(2, 2),     # 16->8
-            nn.Conv2d(32, 64, kernel_size=1), nn.ReLU(inplace=True)                                    # Keep size 8x8
+            nn.Conv2d(1, 8, kernel_size=3, padding=1), nn.ReLU(inplace=True), nn.MaxPool2d(2, 2),
+            nn.Conv2d(8, 16, kernel_size=3, padding=1), nn.ReLU(inplace=True), nn.MaxPool2d(2, 2),
+            nn.Conv2d(16, 32, kernel_size=3, padding=1), nn.ReLU(inplace=True), nn.MaxPool2d(2, 2),
+            nn.Conv2d(32, 32, kernel_size=3, padding=1), nn.ReLU(inplace=True), nn.MaxPool2d(2, 2),
+            nn.Conv2d(32, 64, kernel_size=1), nn.ReLU(inplace=True) # Keep size (e.g., 14x14 for 224 input)
         )
-        # Output: (B, 64, H/16, W/16)
+        # Output: (B, 64, H_in/16, W_in/16)
 
     def forward(self, x):
         return self.encoder(x)
@@ -115,7 +122,7 @@ class FPNDecoder(nn.Module):
              self.smooth_convs.append(nn.Conv2d(fpn_channels, fpn_channels, kernel_size=3, padding=1))
 
         # Final convolution to get desired output channels from the finest level (P1)
-        # P1 should be at the same resolution as C1 (e.g., 128x128 for 128x128 input)
+        # P1 should be at the same resolution as C1 (i.e., MODEL_INPUT_SIZE)
         self.final_conv = nn.Conv2d(fpn_channels, out_channels, kernel_size=3, padding=1)
 
     def _upsample_add(self, top_down_feat, lateral_feat):
@@ -164,10 +171,7 @@ class FPNDecoder(nn.Module):
         # Final 3x3 conv on P1 to get desired output channels
         out = F.relu(self.final_conv(p1_output)) # Add ReLU. Shape: (B, out_channels, H, W), where H,W = MODEL_INPUT_SIZE
 
-        # REMOVED: This line was causing the size mismatch. P1 is already at the target resolution.
-        # out = F.interpolate(out, scale_factor=2, mode='bilinear', align_corners=False)
-
-        return out # Output shape should now be (B, out_channels, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE)
+        return out # Output shape should be (B, out_channels, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE)
 
 
 class PSFHead(nn.Module):
@@ -199,20 +203,22 @@ class VGG19FPNASPP(nn.Module):
     def __init__(self):
         super(VGG19FPNASPP, self).__init__()
         # Encoders
-        self.image_encoder = VGG19Encoder() # Outputs [C1(1/1), C2(1/2), C3(1/4), C4(1/8), C5(1/16)]
-        self.mask_encoder = SmallPSFEncoder() # Outputs features at 1/16 scale (e.g., 8x8 for 128 input)
+        # For MODEL_INPUT_SIZE = 224x224:
+        # VGG19Encoder outputs [C1(1/1), C2(1/2), C3(1/4), C4(1/8), C5(1/16)]
+        # e.g., C5 is (B, 512, 14, 14) for 224x224 input.
+        self.image_encoder = VGG19Encoder()
+        # SmallPSFEncoder outputs features at 1/16 scale (e.g., 14x14 for 224x224 input)
+        self.mask_encoder = SmallPSFEncoder()
 
         # VGG channel info
-        # C1=64, C2=128, C3=256, C4=512, C5=512 (captured at index 35, before 5th pool)
         vgg_c1_channels = 64
         vgg_c2_channels = 128
         vgg_c3_channels = 256
         vgg_c4_channels = 512
-        vgg_c5_channels = 512 # Features captured at 1/16 scale
-        mask_features_channels = 64 # Output of SmallPSFEncoder (also 1/16 scale)
+        vgg_c5_channels = 512
+        mask_features_channels = 64 # Output of SmallPSFEncoder
 
         # Fusion layer (fuse C5 and mask_features directly as they have the same 1/16 scale)
-        # REMOVED: self.resize_mask_feat - not needed as scales match
         fusion_in_channels_c5 = vgg_c5_channels + mask_features_channels # 512 + 64 = 576
         fusion_out_channels_c5 = 512 # Project back to 512 for consistency
         self.fusion_conv_c5 = nn.Sequential(
@@ -224,12 +230,10 @@ class VGG19FPNASPP(nn.Module):
         # ASPP at C5 level (operates on 1/16 scale features)
         self.aspp_c5 = ASPP(in_channels=fusion_out_channels_c5, out_channels=fusion_out_channels_c5) # 512 -> 512
 
-        # FPN Decoder takes VGG C1-C4 features and the output of ASPP as the effective C5.
-        # Ensure the channel list matches the actual features passed.
+        # FPN Decoder
         fpn_encoder_channels = [vgg_c1_channels, vgg_c2_channels, vgg_c3_channels, vgg_c4_channels, fusion_out_channels_c5]
-        # Example: [64, 128, 256, 512, 512]
         self.fpn_decoder = FPNDecoder(
-             encoder_channels=fpn_encoder_channels, # Pass the actual channel sizes
+             encoder_channels=fpn_encoder_channels,
              fpn_channels=256, # Internal FPN channels
              out_channels=64   # Channels before PSF head
          )
@@ -239,7 +243,7 @@ class VGG19FPNASPP(nn.Module):
 
 
     def forward(self, image, mask):
-        # Image normalization happens in dataset.py now
+        # Image normalization happens in dataset.py
 
         # Ensure mask has channel dimension
         if mask.dim() == 3:
@@ -247,22 +251,24 @@ class VGG19FPNASPP(nn.Module):
 
         # 1. Encode Image and Mask
         encoder_features = self.image_encoder(image) # [C1, C2, C3, C4, C5]
-        C1, C2, C3, C4, C5 = encoder_features      # C5 shape (B, 512, H/16, W/16) e.g., (B, 512, 8, 8)
-        mask_features = self.mask_encoder(mask)    # mask_features shape (B, 64, H/16, W/16) e.g., (B, 64, 8, 8)
+        C1, C2, C3, C4, C5 = encoder_features
+        # For 224x224 input:
+        # C5 shape (B, 512, H/16, W/16) e.g., (B, 512, 14, 14)
+        mask_features = self.mask_encoder(mask)
+        # mask_features shape (B, 64, H/16, W/16) e.g., (B, 64, 14, 14)
 
         # 2. Fuse C5 and Mask Features (at 1/16 scale)
-        # REMOVED: mask_features_resized = self.resize_mask_feat(mask_features)
-        fused_features = torch.cat([C5, mask_features], dim=1) # Shape: (B, 512+64, 8, 8)
-        fused_c5 = self.fusion_conv_c5(fused_features)        # Shape: (B, 512, 8, 8)
+        fused_features = torch.cat([C5, mask_features], dim=1) # Shape: (B, 512+64, 14, 14) for 224 input
+        fused_c5 = self.fusion_conv_c5(fused_features)        # Shape: (B, 512, 14, 14) for 224 input
 
         # 3. Apply ASPP to Fused Bottleneck Features
-        aspp_output = self.aspp_c5(fused_c5) # This is the effective C5 for the FPN. Shape: (B, 512, 8, 8)
+        aspp_output = self.aspp_c5(fused_c5) # Effective C5 for FPN. Shape: (B, 512, 14, 14) for 224 input
 
         # 4. Decode using FPN
-        # Pass C1-C4 and the effective C5 (aspp_output)
-        decoder_output = self.fpn_decoder(aspp_output, [C1, C2, C3, C4]) # Pass C1-C4 list
+        # Decoder output will be at MODEL_INPUT_SIZE (e.g., 224x224)
+        decoder_output = self.fpn_decoder(aspp_output, [C1, C2, C3, C4])
 
         # 5. Predict PSF Map
-        psf_map = self.psf_head(decoder_output)
+        psf_map = self.psf_head(decoder_output) # Output shape (B, 1, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE)
 
         return psf_map

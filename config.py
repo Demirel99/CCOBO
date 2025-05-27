@@ -17,14 +17,14 @@ EMPTY_PATCHES_OUTPUT_DIR = "C:\\Users\\Mehmet_Postdoc\\Desktop\\python_set_up_co
 ANNOTATED_PATCHES_OUTPUT_DIR = "C:\\Users\\Mehmet_Postdoc\\Desktop\\python_set_up_code\\iterative_crowd_counting\\dataset_for_stopping_criteria\\end_iteration"
 
 # --- Data Preprocessing ---
-AUGMENTATION_SIZE = 150 # Intermediate size during augmentation before final crop
-MODEL_INPUT_SIZE = 128 # Final input size to the model (after center crop)
-MIN_DIM_RESCALE = 150 # Minimum dimension allowed after random scaling
+AUGMENTATION_SIZE = 256 # Intermediate size during augmentation before final crop (e.g., 256 for 224 input)
+MODEL_INPUT_SIZE = 224 # Final input size to the model (after center crop) - Changed to 224
+MIN_DIM_RESCALE = 256 # Minimum dimension allowed after random scaling (should be >= AUGMENTATION_SIZE) - Adjusted
 GT_PSF_SIGMA = 3      # Sigma for Gaussian kernel to generate GT PSFs
 
 # --- Training ---
 TOTAL_ITERATIONS = 20000
-BATCH_SIZE = 16
+BATCH_SIZE = 8 # You might need to reduce batch size if 224x224 images cause memory issues
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 VALIDATION_INTERVAL = 100 # How often to run validation
@@ -47,3 +47,5 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 print(f"Using device: {DEVICE}")
 print(f"Output directory: {OUTPUT_DIR}")
+print(f"Model input size set to: {MODEL_INPUT_SIZE}x{MODEL_INPUT_SIZE}")
+print(f"Augmentation size set to: {AUGMENTATION_SIZE}x{AUGMENTATION_SIZE}")

@@ -53,3 +53,26 @@ def split_train_val(sorted_image_paths, sorted_gt_paths, val_ratio=0.1, seed=42)
 
     print(f"Data split: {len(train_image_paths)} train, {len(val_image_paths)} validation samples.")
     return train_image_paths, train_gt_paths, val_image_paths, val_gt_paths
+
+def generate_anchor_grid_centers_pixel(feature_map_height, feature_map_width, fpn_output_stride):
+    """
+    Generates anchor center pixel coordinates for a given feature map size and stride.
+    The coordinates are relative to the model input image space.
+    Args:
+        feature_map_height (int): Height of the feature map.
+        feature_map_width (int): Width of the feature map.
+        fpn_output_stride (int): The stride of this feature map relative to the input image.
+    Returns:
+        torch.Tensor: Anchor coordinates (N_anchors, 2) where N_anchors = H_feat * W_feat.
+                      Coordinates are (x_pixel, y_pixel).
+    """
+    anchors = []
+    for j in range(feature_map_height): # y_grid_idx (row index)
+        for i in range(feature_map_width): # x_grid_idx (column index)
+            # Center of the grid cell in pixel coordinates on the input image
+            # (i + 0.5) is the center of the i-th cell in grid coordinates
+            # fpn_output_stride maps grid coordinates to input image pixel coordinates
+            pixel_x = (i + 0.5) * fpn_output_stride
+            pixel_y = (j + 0.5) * fpn_output_stride
+            anchors.append([pixel_x, pixel_y])
+    return torch.tensor(anchors, dtype=torch.float32)

@@ -19,7 +19,7 @@ def set_seed(seed=42):
         # Optional: Might slow down training but ensures reproducibility
         # torch.backends.cudnn.deterministic = True
         # torch.backends.cudnn.benchmark = False
-    print(f"Seed set to {seed}")
+    #print(f"Seed set to {seed}")
 
 def find_and_sort_paths(directory, pattern):
     """Finds and sorts paths matching a pattern in a directory."""
